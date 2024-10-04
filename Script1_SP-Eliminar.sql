@@ -39,9 +39,15 @@ DECLARE @TipoError int;
 DECLARE @Mensaje varchar(50);
 
 EXEC sp_user_delete 
-    @UserID = '1AFDDB17-A523-4586-BA1C-04957268D9CB', -- Reemplaza con el GUID del usuario
+    @UserID = 'FC86493C-D256-45F8-83FD-2AF13FD42E62', -- Reemplaza con el GUID del usuario
     @TipoError = @TipoError OUTPUT, 
     @Mensaje = @Mensaje OUTPUT;
 
 -- Mostrar los resultados de las variables de salida
 SELECT @TipoError AS TipoError, @Mensaje AS Mensaje;
+
+
+
+--Insertar
+INSERT INTO Users (Id, Email, Password, Fullname)
+VALUES (NEWID(), 'user@example.com', 'password123', 'John Doe');

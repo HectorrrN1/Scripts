@@ -1,3 +1,8 @@
+-- ********************************* 
+-- Author: <Alexis Santana>
+-- <Create date: 03/10/2024>
+-- <Description: Consulta de registros de la tabla CE_User>
+-- *********************************
 
 CREATE PROCEDURE sp_user_selection
 @TipoError int output,
