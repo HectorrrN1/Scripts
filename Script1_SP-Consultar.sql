@@ -1,26 +1,39 @@
-
-CREATE PROCEDURE sp_user_selection
-@TipoError int output,
-@Mensaje varchar(50) output
+USE [Chepeat]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_users_selection] Script Date: 03/10/2024 10:47:13 p. m. ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+-- =============================================
+-- Author:         Alexis Eduardo Santana Vega
+-- Create date:    3 Octubre 2024
+-- Description:    Consulta todos los usuarios de la tabla CE_Usuarios
+-- =============================================
+CREATE OR ALTER PROCEDURE sp_users_selection
+@ErrorType INT OUTPUT,
+@Message VARCHAR(100) OUTPUT
 AS
 BEGIN
-SET NOCOUNT ON
-BEGIN TRY
-	SELECT 
-		id as id,
-		email as email,
-		password as password,
-		fullname as fullname
-	FROM CE_Users
-	SET @TipoError = 1
-	SET @Mensaje = 'Operacion correcta'
+	SET NOCOUNT ON
+	BEGIN TRY
+	BEGIN
+		SELECT 
+			Id as Id,
+			Email as Email,
+			Password as Password,
+			Fullname as Fullname
+			FROM CE_Users
+		SET @ErrorType = 1
+		SET @Message = 'Operacion correcta'
+	END
 END TRY
 BEGIN CATCH
 	IF(XACT_STATE()=-1)
-	rollback transaction
+		rollback transaction
 	IF(XACT_STATE()=1)
-	commit transaction
-	SET @TipoError = 2
-	Set @Mensaje = 'Ha ocurrido un error'
+		commit transaction
+	SET @ErrorType = 2
+	Set @Message = 'Ha ocurrido un error'
 END CATCH
 END
