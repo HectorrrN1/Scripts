@@ -419,6 +419,9 @@ BEGIN
         INSERT INTO Sellers(Id, StoreName, Description, Street, ExtNumber, IntNumber, Neighborhood, City, State, CP, AddressNotes, Location, CreatedAt, UpdatedAt, IdUser) 
         VALUES(@Id, @StoreName, @Description, @Street, @ExtNumber, @IntNumber, @Neighborhood, @City, @State, @CP, @AddressNotes, GEOGRAPHY::Point(@Latitude, @Longitude, 4326), @CreatedAt, @UpdatedAt, @IdUser);
 
+		-- Agregar el rol de vendedor al usuario en Users
+		UPDATE Users SET IsSeller = 1 WHERE Id = @IdUser; 
+
         -- Asignar parámetros de salida
         SET @NumError = 0;
         SET @Result = 'Vendedor creado con éxito';
