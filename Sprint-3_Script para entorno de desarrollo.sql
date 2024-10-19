@@ -76,18 +76,17 @@ GO
 -- Crear la tabla para los datos de usuarios vendedores
 CREATE TABLE Sellers (
     Id UNIQUEIDENTIFIER DEFAULT NEWID() PRIMARY KEY,
-    StoreName VARCHAR(120),
-	-- Description VARCHAR(255),
-    -- Street VARCHAR(100),
-    -- ExtNumber VARCHAR(6),
-    -- IntNumber VARCHAR(6),
-    -- Neighborhood VARCHAR(100),
-    -- City VARCHAR(100),
-    -- State VARCHAR(100),
-    -- CP VARCHAR(10),
-	-- Altitude VARCHAR(50),
-	-- Longitude VARCHAR(50),
-    -- AddressNotes VARCHAR(255),
+    StoreName VARCHAR(120) NOT NULL,
+	Description VARCHAR(255),
+    Street VARCHAR(100) NOT NULL,
+    ExtNumber VARCHAR(6) NOT NULL,
+    IntNumber VARCHAR(6),
+    Neighborhood VARCHAR(100) NOT NULL,
+    City VARCHAR(100) NOT NULL,
+    State VARCHAR(100) NOT NULL,
+    CP VARCHAR(10) NOT NULL,
+    AddressNotes VARCHAR(255),
+	Location GEOGRAPHY NOT NULL,
 	CreatedAt DATETIME NOT NULL,
 	UpdatedAt DATETIME NOT NULL,
 	IdUser UNIQUEIDENTIFIER NOT NULL,
@@ -389,6 +388,17 @@ GO
 
 CREATE OR ALTER PROCEDURE sp_registrar_vendedor
     @StoreName NVARCHAR(120),
+	@Description VARCHAR(255),
+    @Street VARCHAR(100),
+    @ExtNumber VARCHAR(6),
+    @IntNumber VARCHAR(6),
+    @Neighborhood VARCHAR(100),
+    @City VARCHAR(100),
+    @State VARCHAR(100),
+    @CP VARCHAR(10),
+    @AddressNotes VARCHAR(255),
+	@Latitude FLOAT,
+	@Longitude FLOAT,
     @CreatedAt DATETIME,
     @UpdatedAt DATETIME,
     @IdUser UNIQUEIDENTIFIER,
@@ -406,12 +416,12 @@ BEGIN
         DECLARE @Id UNIQUEIDENTIFIER = NEWID();
 
         -- Agregar vendedor a la tabla Sellers
-        INSERT INTO Sellers(Id, StoreName, CreatedAt, UpdatedAt, IdUser) 
-        VALUES(@Id, @StoreName, @CreatedAt, @UpdatedAt, @IdUser);
+        INSERT INTO Sellers(Id, StoreName, Description, Street, ExtNumber, IntNumber, Neighborhood, City, State, CP, AddressNotes, Location, CreatedAt, UpdatedAt, IdUser) 
+        VALUES(@Id, @StoreName, @Description, @Street, @ExtNumber, @IntNumber, @Neighborhood, @City, @State, @CP, @AddressNotes, GEOGRAPHY::Point(@Latitude, @Longitude, 4326), @CreatedAt, @UpdatedAt, @IdUser);
 
         -- Asignar parámetros de salida
         SET @NumError = 0;
-        SET @Result = 'Cuenta creada con éxito';
+        SET @Result = 'Vendedor creado con éxito';
 
         -- Confirmar transacción
         COMMIT TRANSACTION;
@@ -425,7 +435,7 @@ BEGIN
             COMMIT TRANSACTION;
 
         -- Manejo de errores
-        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE();
+        DECLARE @severity INT = ERROR_SEVERITY(), @states INT = ERROR_STATE();
         SET @Result = 'Se ha presentado un error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();
         SET @NumError = 2;        
 
@@ -435,4 +445,212 @@ BEGIN
 END;
 GO
 PRINT 'COMPILACIÓN CORRECTA --> sp_registrar_vendedor';
+GO
+
+
+-- -------------------------------------------------------------------
+-- Authores:      Alexis Eduardo Santana Vega
+-- Create date:   18 Octubre 2024
+-- Description:   SP para la actualización de los vendedores
+-- -------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE sp_actualizar_vendedor
+	@Id UNIQUEIDENTIFIER,
+    @StoreName NVARCHAR(120),
+	@Description VARCHAR(255),
+    @Street VARCHAR(100),
+    @ExtNumber VARCHAR(6),
+    @IntNumber VARCHAR(6),
+    @Neighborhood VARCHAR(100),
+    @City VARCHAR(100),
+    @State VARCHAR(100),
+    @CP VARCHAR(10),
+    @AddressNotes VARCHAR(255),
+	@Latitude FLOAT,
+	@Longitude FLOAT,
+    @UpdatedAt DATETIME,
+    @NumError INT OUTPUT,
+    @Result VARCHAR(512) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        -- Iniciar transacción
+        BEGIN TRANSACTION;
+
+		UPDATE Sellers SET 
+			StoreName = @StoreName, 
+			Description = @Description,
+			Street = @Street,
+			ExtNumber = @ExtNumber,
+			IntNumber = @IntNumber,
+			Neighborhood = @Neighborhood,
+			City = @City,
+			State = @State,
+			CP = @CP,
+			AddressNotes = @AddressNotes,
+			Location = GEOGRAPHY::Point(@Latitude, @Longitude, 4326),
+			UpdatedAt = @UpdatedAt
+		WHERE Id = @Id;
+
+        -- Asignar parámetros de salida
+        SET @NumError = 0;
+        SET @Result = 'Vendedor actualizado con éxito';
+
+        -- Confirmar transacción
+        COMMIT TRANSACTION;
+		SELECT @NumError as NumError, @Result as Result;
+    END TRY
+    BEGIN CATCH
+        -- Revertir transacción si ocurre un error
+        IF XACT_STATE() = -1
+            ROLLBACK TRANSACTION;
+        ELSE IF XACT_STATE() = 1
+            COMMIT TRANSACTION;
+
+        -- Manejo de errores
+        DECLARE @severity INT = ERROR_SEVERITY(), @states INT = ERROR_STATE();
+        SET @Result = 'Se ha presentado un error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();
+        SET @NumError = 2;        
+
+        -- Lanzar error con THROW en vez de RAISEERROR
+        THROW;
+    END CATCH;
+END;
+GO
+PRINT 'COMPILACIÓN CORRECTA --> sp_actualizar_vendedor';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Alexis Eduardo Santana Vega
+-- Create date:   18 Octubre 2024
+-- Description:   SP para la consulta de vendedor mediante su id
+-- -------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE sp_consultar_vendedor_por_id
+	@Id UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+		SELECT 
+    Id, 
+    StoreName, 
+    Description,
+    Street,
+    ExtNumber,
+    IntNumber,
+    Neighborhood,
+    City,
+    State,
+    CP,
+    AddressNotes,
+	Location.Lat as Latitude,
+	Location.Long as Longitude,
+    -- Location.STAsText() AS LocationAsString, -- Convertir GEOGRAPHY a texto
+    CreatedAt, 
+    UpdatedAt,
+    IdUser
+FROM Sellers
+WHERE Id = @Id;
+    END TRY
+    BEGIN CATCH
+        -- Revertir transacción si ocurre un error
+        IF XACT_STATE() = -1
+            ROLLBACK TRANSACTION;
+        ELSE IF XACT_STATE() = 1
+            COMMIT TRANSACTION;
+        -- Lanzar error con THROW en vez de RAISEERROR
+        THROW;
+    END CATCH;
+END;
+GO
+PRINT 'COMPILACIÓN CORRECTA --> sp_consultar_vendedor_por_id';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Alexis Eduardo Santana Vega
+-- Create date:   18 Octubre 2024
+-- Description:   SP para la consulta de vendedor mediante un radio
+-- -------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE sp_consultar_vendedores_por_radio
+	@Latitude FLOAT,
+    @Longitude FLOAT,
+    @RadiusKm FLOAT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+	DECLARE @UserLocation GEOGRAPHY = GEOGRAPHY::Point(@Latitude, @Longitude, 4326);
+		SELECT 
+    Id, 
+    StoreName, 
+    Description,
+    Street,
+    ExtNumber,
+    IntNumber,
+    Neighborhood,
+    City,
+    State,
+    CP,
+    AddressNotes,
+	Location.Lat as Latitude,
+	Location.Long as Longitude,
+    -- Location.STAsText() AS Location, -- Convertir GEOGRAPHY a texto
+    CreatedAt, 
+    UpdatedAt,
+    IdUser
+FROM Sellers WHERE @UserLocation.STDistance(Location) <= @RadiusKm * 1000;
+    END TRY
+    BEGIN CATCH
+        -- Revertir transacción si ocurre un error
+        IF XACT_STATE() = -1
+            ROLLBACK TRANSACTION;
+        ELSE IF XACT_STATE() = 1
+            COMMIT TRANSACTION;
+        -- Lanzar error con THROW en vez de RAISEERROR
+        THROW;
+    END CATCH;
+END;
+GO
+PRINT 'COMPILACIÓN CORRECTA --> sp_consultar_vendedores_por_radio';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Alexis Eduardo Santana Vega
+-- Create date:   18 Octubre 2024
+-- Description:   SP para la eliminacion de vendedores por su Id
+-- -------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE sp_eliminar_vendedor
+    @Id UNIQUEIDENTIFIER,
+    @NumError int OUTPUT,
+    @Result varchar(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Eliminar el vendedor basado en el ID proporcionado
+        DELETE FROM Sellers
+        WHERE Id = @Id;
+
+        SET @NumError = 1;
+        SET @Result = 'Vendedor eliminado correctamente';
+
+		SELECT @NumError AS NumError, @Result AS Result;
+    END TRY
+    BEGIN CATCH
+        if (xact_state()) = -1
+            rollback transaction
+        if (xact_state()) = 1
+            commit transaction
+        declare @severity int = error_severity(), @state int = error_state()        
+        set @Result = 'Se ha presentado un error en Base de Datos: ' + (select convert(nvarchar(2048), error_number()) + ' - ' + error_message())    
+        SET @NumError = 3;        
+    END CATCH
+END;
+GO
+PRINT 'COMPILACIÓN CORRECTA --> sp_eliminar_vendedor';
 GO
