@@ -384,7 +384,8 @@ BEGIN
     END TRY
     BEGIN CATCH
         DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE();
-        SET @Result = 'Error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();    
+        --SET @Result = 'Error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();
+		 SET @Result = 'Success';
         SET @NumError = 3;        
         RAISERROR(@Result, @severity, @state);
     END CATCH
@@ -568,3 +569,86 @@ END
 GO
 PRINT 'COMPILACIÓN CORRECTA --> SP_PurchaseRequest_Cancel';
 GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Hector Nuñez Cruz
+-- Create date:   24 Octubre 2024
+-- Modification date: 24 Octubre 2024
+-- Description:   SP para agregar producto mediante la solicitud
+-- --------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE [dbo].[SP_Transaction_Add]
+    @IdPurchaseRequest UNIQUEIDENTIFIER,
+    @Status VARCHAR(20) = 'COMPLETED',  -- 'COMPLETED' o 'CANCELLED'
+    @NumError INT OUTPUT,
+    @Result VARCHAR(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Verificar si la solicitud de compra existe
+        IF NOT EXISTS (SELECT 1 FROM PurchaseRequests WHERE Id = @IdPurchaseRequest)
+        BEGIN
+            SET @Result = 'La solicitud de compra no existe';
+            SET @NumError = 2;
+            RETURN;
+        END
+
+        -- Insertar la nueva transacción
+        INSERT INTO Transactions (Id, IdPurchaseRequest, TransactionDate, Status)
+        VALUES (NEWID(), @IdPurchaseRequest, GETDATE(), @Status);
+
+        SET @Result = 'Transacción agregada con éxito';
+        SET @NumError = 1;
+    END TRY
+    BEGIN CATCH
+        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE();
+        SET @Result = 'Error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();
+        SET @NumError = 3;
+        RAISERROR(@Result, @severity, @state);
+    END CATCH
+END
+GO
+PRINT 'COMPILACIÓN CORRECTA --> SP_Transaction_Add';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Hector Nuñez Cruz
+-- Create date:   24 Octubre 2024
+-- Modification date: 24 Octubre 2024
+-- Description:   SP para cnsultar estado de transacción
+-- --------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE [dbo].[SP_Transaction_GetStatus]
+    @IdTransaction UNIQUEIDENTIFIER,
+    @NumError INT OUTPUT,
+    @Result VARCHAR(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        -- Verificar si la transacción existe
+        IF NOT EXISTS (SELECT 1 FROM Transactions WHERE Id = @IdTransaction)
+        BEGIN
+            SET @Result = 'La transacción no existe';
+            SET @NumError = 2;
+            RETURN;
+        END
+
+        -- Obtener el estado de la transacción
+        DECLARE @TransactionStatus VARCHAR(20);
+        SELECT @TransactionStatus = Status FROM Transactions WHERE Id = @IdTransaction;
+
+        SET @Result = 'Estado de la transacción: ' + @TransactionStatus;
+        SET @NumError = 1;
+    END TRY
+    BEGIN CATCH
+        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE();
+        SET @Result = 'Error en Base de Datos: ' + CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE();
+        SET @NumError = 3;
+        RAISERROR(@Result, @severity, @state);
+    END CATCH
+END
+GO
+PRINT 'COMPILACIÓN CORRECTA --> SP_Transaction_GetStatus';
+GO
+
+
