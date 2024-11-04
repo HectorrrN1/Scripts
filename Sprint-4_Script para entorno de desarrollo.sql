@@ -1,7 +1,7 @@
 -- ===================================================================
 -- Autores:        Hector Nuñez Cruz
 -- Create date:    20 Octubre 2024
--- Modification date: 20 Octubre 2024
+-- Modification date: 30 Octubre 2024
 -- Description:    Creación de base de datos
 -- ===================================================================
 
@@ -20,47 +20,30 @@ GO
 PRINT 'COMPILACIÓN CORRECTA --> Acceso a BD';
 GO
 
+-- Deshabilitar temporalmente las restricciones de claves foráneas para eliminar tablas sin problemas
+ALTER TABLE dbo.Comments DROP CONSTRAINT IF EXISTS FK_Comments_IdUser;
+ALTER TABLE dbo.Comments DROP CONSTRAINT IF EXISTS FK_Comments_IdSeller;
+ALTER TABLE dbo.Comments DROP CONSTRAINT IF EXISTS FK_Comments_IdTransaction;
+ALTER TABLE dbo.Transactions DROP CONSTRAINT IF EXISTS FK_Transactions_IdPurchaseRequest;
+ALTER TABLE dbo.PurchaseRequests DROP CONSTRAINT IF EXISTS FK_PurchaseRequests_IdProduct;
+ALTER TABLE dbo.PurchaseRequests DROP CONSTRAINT IF EXISTS FK_PurchaseRequests_IdBuyer;
+ALTER TABLE dbo.RefreshTokens DROP CONSTRAINT IF EXISTS FK_RefreshTokens_UserId;
+ALTER TABLE dbo.Products DROP CONSTRAINT IF EXISTS FK_Products_IdSeller;
+ALTER TABLE dbo.Sellers DROP CONSTRAINT IF EXISTS FK_Sellers_IdUser;
+ALTER TABLE dbo.UserRoles DROP CONSTRAINT IF EXISTS FK_UserRoles_IdUser;
+ALTER TABLE dbo.UserRoles DROP CONSTRAINT IF EXISTS FK_UserRoles_IdRole;
+
 -- Verificar si existen tablas y eliminarlas para reiniciar el entorno de desarrollo
-IF OBJECT_ID('dbo.Products', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.Products;
-END
-GO
+IF OBJECT_ID('dbo.Comments', 'U') IS NOT NULL DROP TABLE dbo.Comments;
+IF OBJECT_ID('dbo.Transactions', 'U') IS NOT NULL DROP TABLE dbo.Transactions;
+IF OBJECT_ID('dbo.PurchaseRequests', 'U') IS NOT NULL DROP TABLE dbo.PurchaseRequests;
+IF OBJECT_ID('dbo.RefreshTokens', 'U') IS NOT NULL DROP TABLE dbo.RefreshTokens;
+IF OBJECT_ID('dbo.Products', 'U') IS NOT NULL DROP TABLE dbo.Products;
+IF OBJECT_ID('dbo.Sellers', 'U') IS NOT NULL DROP TABLE dbo.Sellers;
+IF OBJECT_ID('dbo.UserRoles', 'U') IS NOT NULL DROP TABLE dbo.UserRoles;
+IF OBJECT_ID('dbo.Roles', 'U') IS NOT NULL DROP TABLE dbo.Roles;
+IF OBJECT_ID('dbo.Users', 'U') IS NOT NULL DROP TABLE dbo.Users;
 
-IF OBJECT_ID('dbo.Sellers', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.Sellers;
-END
-
-IF OBJECT_ID('dbo.Users', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.Users;
-END
-
-IF OBJECT_ID('dbo.Roles', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.Roles;
-END
-
-IF OBJECT_ID('dbo.UserRoles', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.UserRoles;
-END
-
-IF OBJECT_ID('dbo.PurchaseRequests', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.PurchaseRequests;
-END
-
-IF OBJECT_ID('dbo.Transactions', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.Transactions;
-END
-
-IF OBJECT_ID('dbo.RefreshTokens', 'U') IS NOT NULL
-BEGIN
-    DROP TABLE dbo.RefreshTokens;
-END
 GO
 PRINT 'COMPILACIÓN CORRECTA --> Eliminación exitosa de las tablas existentes';
 GO
@@ -115,6 +98,7 @@ CREATE TABLE Sellers (
     Country VARCHAR(100),
     CP VARCHAR(10) NOT NULL,
     AddressNotes VARCHAR(255),
+    Rating DECIMAL(3, 2) DEFAULT 0.0,  -- Campo de rating para almacenar la puntuación promedio
     CreatedAt DATETIME NOT NULL,
     UpdatedAt DATETIME NOT NULL,
     IdUser UNIQUEIDENTIFIER NOT NULL,
@@ -181,9 +165,30 @@ GO
 PRINT 'COMPILACIÓN CORRECTA --> Tabla Transactions';
 GO
 
--- Agregar los roles básicos (ADMIN, SELLER, BUYER)
-INSERT INTO Roles (Id, Name)
-VALUES (NEWID(), 'ADMIN'), (NEWID(), 'SELLER'), (NEWID(), 'BUYER');
+-- Crear la tabla Comments (comentarios de clientes a vendedores)
+CREATE TABLE Comments (
+    Id UNIQUEIDENTIFIER PRIMARY KEY,
+    IdUser UNIQUEIDENTIFIER NOT NULL,  -- Cliente que hace el comentario
+    IdSeller UNIQUEIDENTIFIER NOT NULL,  -- Vendedor que recibe el comentario
+    IdTransaction UNIQUEIDENTIFIER NOT NULL,  -- Transacción a la que está relacionado el comentario
+    Message NVARCHAR(512) NOT NULL,  -- Mensaje del comentario
+    Rating DECIMAL(3, 2) NOT NULL CHECK (Rating BETWEEN 1 AND 5),  -- Puntuación de 0 a 10
+    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+    FOREIGN KEY (IdUser) REFERENCES Users(Id) ON DELETE NO ACTION,
+    FOREIGN KEY (IdSeller) REFERENCES Sellers(Id) ON DELETE CASCADE,
+    FOREIGN KEY (IdTransaction) REFERENCES Transactions(Id) ON DELETE NO ACTION
+);
+GO
+PRINT 'COMPILACIÓN CORRECTA --> Tabla Comments';
+GO
+
+-- Agregar los roles básicos (ADMIN, SELLER, BUYER) solo si no existen
+IF NOT EXISTS (SELECT 1 FROM Roles WHERE Name = 'ADMIN')
+    INSERT INTO Roles (Id, Name) VALUES (NEWID(), 'ADMIN');
+IF NOT EXISTS (SELECT 1 FROM Roles WHERE Name = 'SELLER')
+    INSERT INTO Roles (Id, Name) VALUES (NEWID(), 'SELLER');
+IF NOT EXISTS (SELECT 1 FROM Roles WHERE Name = 'BUYER')
+    INSERT INTO Roles (Id, Name) VALUES (NEWID(), 'BUYER');
 GO
 PRINT 'COMPILACIÓN CORRECTA --> Inserción de roles básicos';
 GO
@@ -652,3 +657,209 @@ PRINT 'COMPILACIÓN CORRECTA --> SP_Transaction_GetStatus';
 GO
 
 
+-- -------------------------------------------------------------------
+-- Authores:      Hector Nuñez Cruz
+-- Create date:   3 Noviembre 2024
+-- Modification date: 3 Noviembre 2024
+-- Description:   SP para insertar un comentario al vendedor
+-- --------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE [dbo].[SP_Comments_Add]
+    @IdUser UNIQUEIDENTIFIER,
+    @IdSeller UNIQUEIDENTIFIER,
+    @IdTransaction UNIQUEIDENTIFIER,
+    @Message NVARCHAR(512),
+    @Rating DECIMAL(3,2),
+    @NumError INT OUTPUT,
+    @Result VARCHAR(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+    BEGIN
+        -- Verificar que la transacción existe y está completada
+        IF NOT EXISTS (SELECT 1 FROM Transactions 
+                      WHERE Id = @IdTransaction 
+                      AND Status = 'COMPLETED')
+        BEGIN
+            SET @Result = 'La transacción no existe o no está completada'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Verificar que el usuario existe
+        IF NOT EXISTS (SELECT 1 FROM Users WHERE Id = @IdUser)
+        BEGIN
+            SET @Result = 'El usuario no existe'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Verificar que el vendedor existe
+        IF NOT EXISTS (SELECT 1 FROM Sellers WHERE Id = @IdSeller)
+        BEGIN
+            SET @Result = 'El vendedor no existe'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Verificar que el rating está entre 1 y 5
+        IF @Rating < 1 OR @Rating > 5
+        BEGIN
+            SET @Result = 'El rating debe estar entre 1 y 5'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Insertar el comentario
+        INSERT INTO Comments (Id, IdUser, IdSeller, IdTransaction, Message, Rating, CreatedAt)
+        VALUES (NEWID(), @IdUser, @IdSeller, @IdTransaction, @Message, @Rating, GETDATE());
+
+        -- Actualizar el rating promedio del vendedor
+        UPDATE Sellers
+        SET Rating = (
+            SELECT AVG(Rating)
+            FROM Comments
+            WHERE IdSeller = @IdSeller
+        )
+        WHERE Id = @IdSeller;
+
+        SET @Result = 'Operación Correcta'
+        SET @NumError = 1
+    END
+    END TRY
+    BEGIN CATCH
+        IF (XACT_STATE()) = -1
+            ROLLBACK TRANSACTION
+        IF (XACT_STATE()) = 1
+            COMMIT TRANSACTION
+        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE()        
+        SET @Result = 'Se ha presentado un error en Base de Datos: ' + (SELECT CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE())    
+        SET @NumError = 3        
+        RAISERROR(@Result, @severity, @state)
+    END CATCH
+END
+GO
+PRINT 'COMPILACIÓN CORRECTA --> SP_Comments_Add';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Hector Nuñez Cruz
+-- Create date:   3 Noviembre 2024
+-- Modification date: 3 Noviembre 2024
+-- Description:   SP para editar el comentario
+-- --------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE [dbo].[SP_Comments_Edit]
+    @CommentId UNIQUEIDENTIFIER,
+    @IdUser UNIQUEIDENTIFIER,
+    @NewMessage NVARCHAR(512),
+    @NumError INT OUTPUT,
+    @Result VARCHAR(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+    BEGIN
+        -- Verificar que el comentario existe y pertenece al usuario
+        IF NOT EXISTS (SELECT 1 FROM Comments 
+                      WHERE Id = @CommentId 
+                      AND IdUser = @IdUser)
+        BEGIN
+            SET @Result = 'El comentario no existe o no tienes permiso para editarlo'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Actualizar el comentario
+        UPDATE Comments
+        SET Message = @NewMessage
+        WHERE Id = @CommentId AND IdUser = @IdUser;
+
+        SET @Result = 'Operación Correcta'
+        SET @NumError = 1
+    END
+    END TRY
+    BEGIN CATCH
+        IF (XACT_STATE()) = -1
+            ROLLBACK TRANSACTION
+        IF (XACT_STATE()) = 1
+            COMMIT TRANSACTION
+        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE()        
+        SET @Result = 'Se ha presentado un error en Base de Datos: ' + (SELECT CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE())    
+        SET @NumError = 3        
+        RAISERROR(@Result, @severity, @state)
+    END CATCH
+END
+GO
+PRINT 'COMPILACIÓN CORRECTA --> SP_Comments_Edit';
+GO
+
+-- -------------------------------------------------------------------
+-- Authores:      Hector Nuñez Cruz
+-- Create date:   3 Noviembre 2024
+-- Modification date: 3 Noviembre 2024
+-- Description:   SP para calificar al vendedor
+-- --------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE [dbo].[SP_Comments_UpdateRating]
+    @CommentId UNIQUEIDENTIFIER,
+    @IdUser UNIQUEIDENTIFIER,
+    @NewRating DECIMAL(3,2),
+    @NumError INT OUTPUT,
+    @Result VARCHAR(100) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+    BEGIN
+        -- Verificar que el rating está entre 1 y 5
+        IF @NewRating < 1 OR @NewRating > 5
+        BEGIN
+            SET @Result = 'El rating debe estar entre 1 y 5'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Verificar que el comentario existe y pertenece al usuario
+        DECLARE @IdSeller UNIQUEIDENTIFIER
+        SELECT @IdSeller = IdSeller
+        FROM Comments
+        WHERE Id = @CommentId AND IdUser = @IdUser
+
+        IF @IdSeller IS NULL
+        BEGIN
+            SET @Result = 'El comentario no existe o no tienes permiso para actualizarlo'
+            SET @NumError = 2
+            RETURN
+        END
+
+        -- Actualizar el rating del comentario
+        UPDATE Comments
+        SET Rating = @NewRating
+        WHERE Id = @CommentId AND IdUser = @IdUser;
+
+        -- Actualizar el rating promedio del vendedor
+        UPDATE Sellers
+        SET Rating = (
+            SELECT AVG(Rating)
+            FROM Comments
+            WHERE IdSeller = @IdSeller
+        )
+        WHERE Id = @IdSeller;
+
+        SET @Result = 'Operación Correcta'
+        SET @NumError = 1
+    END
+    END TRY
+    BEGIN CATCH
+        IF (XACT_STATE()) = -1
+            ROLLBACK TRANSACTION
+        IF (XACT_STATE()) = 1
+            COMMIT TRANSACTION
+        DECLARE @severity INT = ERROR_SEVERITY(), @state INT = ERROR_STATE()        
+        SET @Result = 'Se ha presentado un error en Base de Datos: ' + (SELECT CONVERT(NVARCHAR(2048), ERROR_NUMBER()) + ' - ' + ERROR_MESSAGE())    
+        SET @NumError = 3        
+        RAISERROR(@Result, @severity, @state)
+    END CATCH
+END
+GO
+PRINT 'COMPILACIÓN CORRECTA --> SP_Comments_UpdateRating';
+GO
